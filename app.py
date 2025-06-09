@@ -24,6 +24,8 @@ model = load_model()
 scaler = load_scaler()
 
 st.title("💹Stock Price Prediction with LSTM")
+st.caption("📅 Select a range with at least 3 months of data (60+ trading days)")
+
 
 # User inputs
 tickers = ['AAPL', 'GOOG', 'MSFT', 'AMZN']
@@ -34,40 +36,46 @@ end_date = st.date_input("End date", pd.to_datetime("2023-01-01"))
 
 if st.button("Predict"):
 
-    # Fetch historical data
-    data = yf.download(ticker, start=start_date, end=end_date)
-
-    if data.empty:
-        st.error("No data found. Try a different ticker or date range.")
+    if start_date >= end_date:
+        st.error("Start date must be before end date.")
     else:
-        st.subheader(f"{ticker} Closing Prices")
-        st.line_chart(data['Close'])
+        data = yf.download(ticker, start=start_date, end=end_date)
 
-        # Prepare data for LSTM
-        close_prices = data['Close'].values.reshape(-1, 1)
-        scaled_data = scaler.transform(close_prices)
+        if data.empty:
+            st.error("No data found. Try a different ticker or date range.")
+        else:
+            st.subheader(f"{ticker} Closing Prices")
+            st.line_chart(data['Close'])
 
-        # Create sequences for prediction
-        def create_sequences(data, seq_length=60):
-            x = []
-            for i in range(seq_length, len(data)):
-                x.append(data[i-seq_length:i, 0])
-            return np.array(x)
+            # Scale the data
+            close_prices = data['Close'].values.reshape(-1, 1)
+            scaled_data = scaler.transform(close_prices)
 
-        x_test = create_sequences(scaled_data)
-        x_test = x_test.reshape((x_test.shape[0], x_test.shape[1], 1))
+            # Create sequences
+            def create_sequences(data, seq_length=60):
+                x = []
+                for i in range(seq_length, len(data)):
+                    x.append(data[i - seq_length:i, 0])
+                return np.array(x)
 
-        # Predict
-        predictions = model.predict(x_test)
-        predictions = scaler.inverse_transform(predictions)
+            x_test = create_sequences(scaled_data)
 
-        # Show prediction vs actual
-        valid = data[60:].copy()
-        valid['Predictions'] = predictions.flatten()
+            if x_test.size == 0:
+                st.error("Not enough data to generate predictions. Try selecting a longer date range.")
+            else:
+                x_test = x_test.reshape((x_test.shape[0], x_test.shape[1], 1))
 
-        st.subheader("Actual vs Predicted Closing Prices")
-        fig, ax = plt.subplots()
-        ax.plot(valid['Close'], label="Actual")
-        ax.plot(valid['Predictions'], label="Predicted")
-        ax.legend()
-        st.pyplot(fig)
+                # Predict and inverse scale
+                predictions = model.predict(x_test)
+                predictions = scaler.inverse_transform(predictions)
+
+                # Prepare DataFrame for plotting
+                valid = data.iloc[60:].copy()
+                valid['Predictions'] = predictions.flatten()
+
+                st.subheader("Actual vs Predicted Closing Prices")
+                fig, ax = plt.subplots()
+                ax.plot(valid['Close'], label="Actual")
+                ax.plot(valid['Predictions'], label="Predicted")
+                ax.legend()
+                st.pyplot(fig)
